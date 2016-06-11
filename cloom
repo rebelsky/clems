@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# cloms
-#   A simple command-line mail system for our Outlook mailer.  
+# cloom
+#   A simple command-line outgoing mail system for our Outlook mailer.  
 #   Requires smtp-cli.
 
 # +-------+----------------------------------------------------------
