@@ -1,0 +1,164 @@
+#!/usr/bin/perl
+
+# cloms
+#   A simple command-line mail system for our Outlook mailer.  
+#   Requires smtp-cli.
+
+# +-------+----------------------------------------------------------
+# | Notes |
+# +-------+
+
+# This program optionally looks in $HOME/.mail-password for your 
+# mail password.  It's not a good idea to create that file, but
+# sometimes it makes life a whole lot easier.
+
+# Information on smtp-cli is available at 
+#   http://www.logix.cz/michal/devel/smtp-cli/
+
+# I wrote this mainly to add a few features to smtp-cli
+#   
+#   1. Make it easier to take plain text input from stdin.  (There 
+#   didn't seem to be a natural way to do this with smpt-cli, but I may 
+#   have missed it.)
+# 
+#   2. Add the ability to easily include --replyto
+#
+#   3. Add the not-so-safe ability to store the password in a file.
+#
+#   4. Hard-code some stuff for convenience.
+  
+
+# +-----------+------------------------------------------------------
+# | Libraries |
+# +-----------+
+
+use Term::ReadKey;
+use Getopt::Long;
+
+# +----------+-------------------------------------------------------
+# | Settings |
+# +----------+
+
+my $DEBUG = 0;
+
+# +---------+--------------------------------------------------------
+# | Globals |
+# +---------+
+
+my $pwfile = $ENV{"HOME"} . "/.mail-password";
+my $file = "";
+chomp(my $user = `whoami`);
+$user .= "\@grinnell.edu";
+my $name = "Samuel A Rebelsky";
+my $replyto = "";
+my @cc;
+my $to = "";
+my $subject = "(No Subject)";
+my $password = "";
+my $verbose = "";
+my $mimic = "";
+my $tmpfile = "/tmp/clom.$$".int(rand(999999));
+
+# The next two were used in an old version and are retained 
+# temporarily.
+chomp(my $date = `date`);
+my $id = time()."-".int(rand(999999))."\@clom";
+
+# +------+-----------------------------------------------------------
+# | Main |
+# +------+
+
+# Process Command Line
+GetOptions("debug" => \$DEBUG,
+           "mimic" => \$mimic,
+           "verbose" => \$verbose,
+           "cc=s" => \@cc,
+           "file=s" => \$file,
+           "name=s" => \$name,
+           "password=s" => \$password,
+           "replyto=s" => \$replyto,
+           "subject=s" => \$subject,
+           "user=s" => \$user);
+LOG("DEBUG: $DEBUG");
+$to = shift;
+if ($verbose) { $verbose = "--verbose" } else { $verbose = ""; }
+
+# Sanity check: You should not have both a password or a password file
+if (($password) && ($pwfile)) {
+  print STDERR "Error!  Both password and pwfile specified\n";
+  exit 1;
+}
+
+# Get the password
+if ((!$password) && (-f $pwfile)) {
+  open PASSWORD, "< $pwfile";
+  $password = <PASSWORD>;
+  chomp($password);
+  close PASSWORD;
+}
+
+# Sanity check
+if ((!$file) && (!$password)) {
+  print STDERR "Error! Either the file or the password must be specified.\n";
+  exit 1;
+}
+
+# Grab the password
+if (!$password) {
+  ReadMode "noecho";
+  print "Password: ";
+  $password = <>;
+  chomp($password);
+  ReadMode "original";
+}
+
+# Make the file
+if (!$file) {
+  $file = $tmpfile;
+  open FILE, "> $file";
+  while ($line = <STDIN>) {
+    print FILE $line;
+  }
+  close FILE;
+}
+
+# Generate the command
+my $command = "smtp-cli $verbose --server=smtp.office365.com:587 --user $user --from \"$name <$user>\" --to $to --subject \"$subject\" --body-plain=$file";
+for (my $i = 0; $i <= $#cc; $i++) {
+  $command .= " --cc ".$cc[$i];
+}
+if ($replyto) {
+  $command .= " --add-header=\"Reply-To: $replyto\"";
+}
+if ($mimic) {
+  $command .= " --print-only";
+}
+LOG("Command: $command");
+$command .= " --password \"$password\"";
+
+# Run the command
+system($command);
+
+# Clean up
+if (-f $tmpfile) {
+  unlink $tmpfile;
+}
+
+# And we're done.
+exit 0;
+
+# +---------+--------------------------------------------------------
+# | Helpers |
+# +---------+
+
+sub LOG($) 
+{
+  if ($DEBUG) {
+    my $str = shift;
+    # Hack!
+    $str =~ s/--password "[^"]*"/--password "......"/;
+    print STDERR "*** ";
+    print STDERR $str;
+    print STDERR "\n";
+  }
+}
